@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Elo — chamada de 3</title>
+  <style>
+    :root {
+      --bg: #0E1116;
+      --surface: #171C24;
+      --surface-2: #1E242E;
+      --line: #2A323F;
+      --text: #E6EAF0;
+      --muted: #8A94A6;
+      --signal: #FFB020;
+      --link: #3DDC97;
+      --danger: #FF5C5C;
+      --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+      --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --r: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.5;
+      overflow: hidden;
+      background-image: radial-gradient(circle at 50% -20%, #1B2430 0%, var(--bg) 60%);
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+      border: none;
+      background: none;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--signal);
+      outline-offset: 2px;
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* ---------- barra de status ---------- */
+    .statusbar {
+      height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(23, 28, 36, .6);
+      backdrop-filter: blur(8px);
+      position: relative;
+      z-index: 5;
+    }
+
+    .brand {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+    }
+
+    .brand span {
+      color: var(--signal);
+    }
+
+    .signal {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 16px;
+    }
+
+    .signal i {
+      width: 4px;
+      background: var(--line);
+      border-radius: 1px;
+      transition: background .3s ease;
+    }
+
+    .signal i:nth-child(1) {
+      height: 6px
+    }
+
+    .signal i:nth-child(2) {
+      height: 11px
+    }
+
+    .signal i:nth-child(3) {
+      height: 16px
+    }
+
+    body[data-state="connecting"] .signal i:nth-child(-n+2) {
+      background: var(--signal);
+      animation: pulse 1.1s infinite;
+    }
+
+    body[data-state="connected"] .signal i {
+      background: var(--link);
+    }
+
+    body[data-state="failed"] .signal i:nth-child(1) {
+      background: var(--danger);
+    }
+
+    @keyframes pulse {
+      50% {
+        opacity: .25
+      }
+    }
+
+    .status-text {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .spacer {
+      flex: 1
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted)
+    }
+
+    /* quantas pessoas estão na sala — indicador de lotação */
+    .roster {
+      display: flex;
+      gap: 5px;
+      cursor: default;
+    }
+
+    .roster i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--line);
+      transition: background .25s ease;
+    }
+
+    .roster i.on {
+      background: var(--link);
+    }
+
+    .roster i.me {
+      background: var(--signal);
+    }
+
+    /* ---------- lobby ---------- */
+    .stage {
+      height: calc(100% - 46px);
+      position: relative;
+    }
+
+    .lobby {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 580px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      padding: 28px;
+      animation: rise .35s ease;
+    }
+
+    @keyframes rise {
+      from {
+        opacity: 0;
+        transform: translateY(8px)
+      }
+
+      to {
+        opacity: 1;
+        transform: none
+      }
+    }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--signal);
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-size: 26px;
+      line-height: 1.2;
+      font-weight: 650;
+      margin-bottom: 8px;
+      letter-spacing: -.01em;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 22px;
+    }
+
+    .field {
+      margin-bottom: 20px
+    }
+
+    .field label {
+      display: block;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 7px
+    }
+
+    .field input {
+      width: 100%;
+      background: #0B0E13;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px 12px;
+      color: var(--text);
+      font-size: 14px
+    }
+
+    .choice {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width:560px) {
+      .choice {
+        grid-template-columns: 1fr
+      }
+    }
+
+    .tile-btn {
+      text-align: left;
+      padding: 16px;
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      transition: border-color .18s ease, transform .18s ease;
+    }
+
+    .tile-btn:hover {
+      border-color: var(--signal);
+      transform: translateY(-2px);
+    }
+
+    .tile-btn b {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 4px;
+    }
+
+    .tile-btn small {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      display: block;
+    }
+
+    .step {
+      margin-top: 22px;
+    }
+
+    .step-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .step-label b {
+      color: var(--signal);
+    }
+
+    .codeinput {
+      width: 100%;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 30px;
+      font-weight: 600;
+      letter-spacing: .35em;
+      text-transform: uppercase;
+      background: #0B0E13;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px 10px;
+    }
+
+    .codeinput::placeholder {
+      color: #3A4451;
+      letter-spacing: .35em
+    }
+
+    .codechip {
+      font-family: var(--mono);
+      font-size: 30px;
+      font-weight: 600;
+      letter-spacing: .3em;
+      text-align: center;
+      background: #0B0E13;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px 8px;
+      color: var(--link);
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 11px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      transition: background .15s ease, border-color .15s ease;
+    }
+
+    .btn:hover {
+      border-color: var(--muted)
+    }
+
+    .btn.primary {
+      background: var(--signal);
+      color: #1A1206;
+      border-color: var(--signal);
+    }
+
+    .btn.primary:hover {
+      filter: brightness(1.08)
+    }
+
+    .btn:disabled {
+      opacity: .45;
+      cursor: not-allowed
+    }
+
+    .note {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: rgba(255, 176, 32, .07);
+      border-left: 2px solid var(--signal);
+      font-size: 13px;
+      color: #D8C09A;
+    }
+
+    .error {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: rgba(255, 92, 92, .08);
+      border-left: 2px solid var(--danger);
+      font-size: 13px;
+      color: #FFB3B3;
+    }
+
+    /* ---------- chamada: grade de vídeos ---------- */
+    .call {
+      display: none;
+      height: 100%
+    }
+
+    body.in-call .lobby {
+      display: none
+    }
+
+    body.in-call .call {
+      display: block
+    }
+
+    .grid {
+      height: 100%;
+      padding: 12px 12px 88px;
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      align-content: center;
+      background: #08090C;
+    }
+
+    .vtile {
+      position: relative;
+      background: #000;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      aspect-ratio: 16/9;
+    }
+
+    .vtile video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+    }
+
+    .vtile.me video {
+      transform: scaleX(-1)
+    }
+
+    .vtile.me.sharing video,
+    .vtile.screen video {
+      transform: none;
+      object-fit: contain
+    }
+
+    .vtile .tag {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      background: rgba(0, 0, 0, .62);
+      padding: 3px 7px;
+      border-radius: 4px;
+      color: var(--muted);
+      max-width: calc(100% - 16px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .vtile .tag b {
+      color: var(--link);
+      font-weight: 600
+    }
+
+    .vtile.waiting::after {
+      content: "aguardando";
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: #0B0E13;
+    }
+
+    @media (max-width:700px) {
+      .grid {
+        grid-template-columns: 1fr;
+        padding-bottom: 96px
+      }
+    }
+
+    .dock {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      background: rgba(23, 28, 36, .94);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      backdrop-filter: blur(10px);
+    }
+
+    .ctrl {
+      width: 46px;
+      height: 46px;
+      border-radius: 10px;
+      background: var(--surface-2);
+      display: grid;
+      place-items: center;
+      transition: background .15s ease;
+    }
+
+    .ctrl:hover {
+      background: #2A323F
+    }
+
+    .ctrl.off {
+      background: rgba(255, 92, 92, .16);
+      color: var(--danger)
+    }
+
+    .ctrl.on {
+      background: rgba(61, 220, 151, .16);
+      color: var(--link)
+    }
+
+    .ctrl.hang {
+      background: var(--danger);
+      color: #fff;
+      width: 58px
+    }
+
+    .ctrl svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* painel lateral (sala + chat) */
+    .panel {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 340px;
+      background: var(--surface);
+      border-left: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform .22s ease;
+      z-index: 4;
+    }
+
+    .panel.open {
+      transform: none
+    }
+
+    .panel header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .panel .body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+    }
+
+    .msgs {
+      display: flex;
+      flex-direction: column;
+      gap: 8px
+    }
+
+    .msg {
+      max-width: 88%;
+      padding: 8px 11px;
+      border-radius: 10px;
+      font-size: 14px;
+      word-break: break-word
+    }
+
+    .msg.me {
+      align-self: flex-end;
+      background: var(--surface-2)
+    }
+
+    .msg.them {
+      align-self: flex-start;
+      background: rgba(255, 176, 32, .12)
+    }
+
+    .msg .who {
+      display: block;
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--muted);
+      margin-bottom: 2px
+    }
+
+    .panel form {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--line)
+    }
+
+    .panel input {
+      flex: 1;
+      background: #0B0E13;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 11px;
+      color: var(--text);
+      font-size: 14px
+    }
+
+    @media (max-width:700px) {
+      .panel {
+        width: 100%
+      }
+    }
+
+    /* ---------- seletor de tela/janela (Electron) ---------- */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 9, 12, .72);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      padding: 24px;
+    }
+
+    .modal-card {
+      width: 100%;
+      max-width: 640px;
+      max-height: 80vh;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .modal-card>header {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--muted)
+    }
+
+    .sources {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+      overflow-y: auto;
+      padding-right: 4px
+    }
+
+    .source-btn {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      text-align: left;
+      transition: border-color .15s ease
+    }
+
+    .source-btn:hover,
+    .source-btn:focus-visible {
+      border-color: var(--signal)
+    }
+
+    .source-btn img {
+      width: 100%;
+      aspect-ratio: 16/10;
+      object-fit: cover;
+      border-radius: 5px;
+      background: #000
+    }
+
+    .source-btn span {
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden
+    }
+
+    @media (prefers-reduced-motion:reduce) {
+      * {
+        animation: none !important;
+        transition: none !important
+      }
+    }
+  </style>
+</head>
+
+<body data-state="idle">
+
+  <div class="statusbar">
+    <div class="brand">E<span>L</span>O</div>
+    <div class="signal" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="status-text" id="statusText">desconectado</div>
+    <div class="roster" id="roster" title="pessoas na sala"><i class="me"></i><i></i><i></i></div>
+    <div class="spacer"></div>
+    <div class="hint" id="peerHint"></div>
+  </div>
+
+  <div class="stage">
+
+    <!-- =================== LOBBY =================== -->
+    <div class="lobby">
+      <div class="card">
+
+        <div id="screenChoose">
+          <div class="eyebrow">Chamada em malha · até 3 pessoas</div>
+          <h1>Elo</h1>
+          <p class="sub">Vídeo, tela e chat direto entre os computadores. Crie uma sala e receba um código curto — é só
+            isso que as outras pessoas precisam para entrar.</p>
+          <div class="field">
+            <label for="displayName">Seu nome</label>
+            <input id="displayName" maxlength="24" placeholder="Como te chamamos na chamada" autocomplete="off" />
+          </div>
+          <div class="choice">
+            <button class="tile-btn" id="btnHost">
+              <b>Criar uma sala</b>
+              <small>Você recebe um código de 6 letras e convida as outras duas pessoas.</small>
+            </button>
+            <button class="tile-btn" id="btnGuest">
+              <b>Entrar com um código</b>
+              <small>Alguém já criou a sala e te passou o código.</small>
+            </button>
+          </div>
+          <div class="error hidden" id="hostError"></div>
+        </div>
+
+        <div id="screenGuest" class="hidden">
+          <div class="eyebrow">Entrar na sala</div>
+          <h1>Digite o código</h1>
+          <p class="sub">Peça para quem criou a sala o código de 6 caracteres.</p>
+          <div class="step">
+            <input class="codeinput" id="codeInput" maxlength="6" autocomplete="off" spellcheck="false"
+              placeholder="AB12CD" />
+            <div class="row">
+              <button class="btn primary" id="btnJoin">Entrar</button>
+              <button class="btn" id="guestBack" data-back>Voltar</button>
+            </div>
+          </div>
+          <div class="error hidden" id="guestError"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- =================== CHAMADA =================== -->
+    <div class="call">
+      <div class="grid" id="grid">
+        <div class="vtile me" id="tileSelf">
+          <video id="selfVideo" autoplay playsinline muted></video>
+          <div class="tag" id="selfTag">você</div>
+        </div>
+      </div>
+
+      <div class="dock">
+        <button class="ctrl" id="btnMic" title="Microfone (M)">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
+            <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+            <path d="M12 18v4" />
+          </svg>
+        </button>
+        <button class="ctrl" id="btnCam" title="Câmera (V)">
+          <svg viewBox="0 0 24 24">
+            <rect x="2" y="6" width="14" height="12" rx="2" />
+            <path d="M16 11l6-3v8l-6-3z" />
+          </svg>
+        </button>
+        <button class="ctrl" id="btnScreen" title="Compartilhar tela (S)">
+          <svg viewBox="0 0 24 24">
+            <rect x="2" y="4" width="20" height="13" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+          </svg>
+        </button>
+        <button class="ctrl" id="btnRoom" title="Código da sala">
+          <svg viewBox="0 0 24 24">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M19 8v6M22 11h-6" />
+          </svg>
+        </button>
+        <button class="ctrl" id="btnChat" title="Chat">
+          <svg viewBox="0 0 24 24">
+            <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+        <button class="ctrl hang" id="btnHang" title="Encerrar">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M2 10.5c5.5-4 14.5-4 20 0v3.2c0 .8-.7 1.4-1.5 1.3l-3.3-.5a1.5 1.5 0 0 1-1.2-1.2l-.3-1.7c-2.3-.8-4.7-.8-7 0l-.3 1.7a1.5 1.5 0 0 1-1.2 1.2l-3.3.5A1.4 1.4 0 0 1 2 13.7z" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- painel do código da sala -->
+      <aside class="panel" id="roomPanel">
+        <header>Código da sala</header>
+        <div class="body">
+          <div class="codechip" id="roomCodeChip">------</div>
+          <div class="row"><button class="btn primary" id="copyRoomCode">Copiar convite</button></div>
+          <div class="note" id="roomNote">Envie esse código para as outras pessoas por qualquer canal (WhatsApp, SMS,
+            voz).</div>
+          <div class="note">O código só serve para vocês se encontrarem, através de um servidor gratuito de sinalização
+            (PeerJS). O vídeo e o áudio continuam indo direto de um computador para o outro.</div>
+        </div>
+      </aside>
+
+      <aside class="panel" id="chatPanel">
+        <header>Recado rápido</header>
+        <div class="body">
+          <div class="msgs" id="msgs"></div>
+        </div>
+        <form id="chatForm">
+          <input id="chatInput" placeholder="Escreva…" autocomplete="off" />
+          <button class="btn primary" type="submit">Ir</button>
+        </form>
+      </aside>
+    </div>
+
+  </div>
+
+  <!-- seletor de tela/janela, usado só dentro do app Electron -->
+  <div class="modal hidden" id="sourceModal">
+    <div class="modal-card">
+      <header>Escolher tela ou janela para compartilhar</header>
+      <div class="sources" id="sourceList"></div>
+      <div class="row"><button class="btn" id="cancelSource">Cancelar</button></div>
+    </div>
+  </div>
+
+  <script src="vendor/peerjs.min.js"></script>
+  <script>
+    /* ===========================================================================
+       ELO 3 — chamada em malha para até três pessoas.
+       ---------------------------------------------------------------------------
+       ARQUITETURA (a parte que vale entender):
+    
+       Toda sala tem um código curto de 6 caracteres, escolhido por quem cria a
+       sala. Os três participantes só precisam se ENCONTRAR — para isso cada um
+       se registra num servidor de sinalização com um "endereço" previsível:
+    
+           elo-<código>-A   → sempre quem criou a sala
+           elo-<código>-B   → a 1ª pessoa que entrar com o código
+           elo-<código>-C   → a 2ª pessoa que entrar com o código
+    
+       Esse endereço é reservado de forma ATÔMICA pelo próprio servidor: se dois
+       convidados tentam entrar ao mesmo tempo, um fica com B e o outro cai
+       automaticamente para C — sem os dois brigarem pela mesma vaga, e sem
+       ninguém ter que copiar e colar nada. É exatamente aí que a versão anterior
+       (código gigante de SDP colado à mão) engasgava com 3 pessoas.
+    
+       Para não pedir para o usuário rodar um servidor, usamos o broker público
+       gratuito do PeerJS só para essa etapa de apresentação. Depois que os pares
+       se enxergam, o vídeo/áudio/chat continuam 100% ponto a ponto (WebRTC) —
+       o broker nunca vê a chamada, só os três endereços acima.
+    
+       Para não haver disputa sobre "quem liga pra quem" (as duas pontas tentando
+       ligar ao mesmo tempo), a regra é sempre a mesma: quem entrou por último
+       liga para quem já estava lá (C liga para A e para B; B liga só para A;
+       A nunca liga, só atende). Cada par troca no máximo UMA chamada.
+       =========================================================================== */
+
+    /* ┌──────────────────────────────────────────────────────────────────────┐
+       │  CONFIGURE AQUI — servidor TURN (opcional, mas recomendado)          │
+       │  dashboard.metered.ca/signup → plano Free → Generate Credential      │
+       │  Com 3 pessoas o TURN é ainda mais importante: basta UM par sem      │
+       │  caminho direto para a malha ficar capenga.                          │
+       └──────────────────────────────────────────────────────────────────────┘ */
+    const TURN = {
+      host: 'standard.relay.metered.ca',
+      username: '',   // <-- cole aqui
+      password: ''    // <-- e aqui
+    };
+
+    function buildIceConfig() {
+      const servers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+      if (TURN.username && TURN.password) {
+        const cred = { username: TURN.username, credential: TURN.password };
+        servers.push(
+          { urls: `turn:${TURN.host}:80`, ...cred },
+          { urls: `turn:${TURN.host}:80?transport=tcp`, ...cred },
+          { urls: `turn:${TURN.host}:443`, ...cred },
+          { urls: `turns:${TURN.host}:443?transport=tcp`, ...cred }
+        );
+      }
+      return { iceServers: servers };
+    }
+    const ICE_CONFIG = buildIceConfig();
+    const HAS_TURN = Boolean(TURN.username && TURN.password);
+
+    /* =========================================================================
+       ESTADO
+       ========================================================================= */
+    const SLOT_ORDER = ['A', 'B', 'C'];
+    const LABEL = { A: 'anfitrião', B: 'pessoa 2', C: 'pessoa 3' };
+    const $ = id => document.getElementById(id);
+
+    const ME = { id: null, isHost: false, name: '', roomCode: null };
+    let peer = null;                 // instância do PeerJS (a "conexão" com o broker)
+    const links = new Map();         // slot -> { call, conn, name }
+    const retryTimers = new Map();   // slot -> timeoutId
+    let opToken = 0;                 // invalida operações antigas (ex.: "Voltar" no meio de um "Entrar")
+
+    let localStream = null;
+    let screenStream = null;
+
+    function setState(state, label) {
+      document.body.dataset.state = state;
+      $('statusText').textContent = label;
+    }
+
+    /* Atualiza as bolinhas de lotação da barra superior. */
+    function refreshRoster() {
+      const dots = $('roster').children;
+      const connected = [...links.values()].filter(l =>
+        l.call && l.call.peerConnection && l.call.peerConnection.connectionState === 'connected'
+      ).length;
+      for (let i = 1; i < dots.length; i++) {
+        dots[i].classList.toggle('on', i <= connected);
+      }
+      const total = connected + 1;
+      $('peerHint').textContent = total > 1 ? `${total} na sala` : '';
+      const names = [...links.values()].map(l => l.name).filter(Boolean);
+      $('roster').title = names.length ? `Na sala: você, ${names.join(', ')}` : 'só você por enquanto';
+      updateRoomPanel();
+    }
+
+    /* =========================================================================
+       1. MÍDIA LOCAL
+       ========================================================================= */
+    async function startLocalMedia() {
+      if (localStream) return localStream;
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: { echoCancellation: true, noiseSuppression: true }
+        });
+      } catch (err) {
+        console.warn('Sem câmera, tentando só áudio:', err);
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      $('selfVideo').srcObject = localStream;
+      return localStream;
+    }
+
+    /* =========================================================================
+       2. MIXER DE ÁUDIO — microfone + som do que está sendo compartilhado
+       -------------------------------------------------------------------------
+       getDisplayMedia devolve o som da tela numa trilha SEPARADA. Se a gente
+       simplesmente enviasse as duas, o navegador do outro lado tocaria só a
+       primeira — o som da tela chegaria e ninguém ouviria.
+    
+       Então juntamos as duas numa trilha só com a Web Audio API:
+    
+           microfone ──▶ ganho 1.0 ──┐
+                                     ├──▶ destino ──▶ trilha única enviada
+           som da tela ─▶ ganho 0.8 ─┘
+    
+       O som da tela vai um pouco mais baixo de propósito, para a voz não sumir
+       embaixo do vídeo/música. Como a trilha continua sendo uma só, dá para
+       trocá-la com replaceTrack e ninguém precisa renegociar nada.
+       ========================================================================= */
+    let audioCtx = null;
+    let mixDest = null;
+    let micNode = null;
+    let sysNode = null;
+    let mixedTrack = null;
+
+    function startAudioMix(systemStream) {
+      const sysTracks = systemStream.getAudioTracks();
+      if (!sysTracks.length) return null;          // a pessoa não marcou "compartilhar áudio"
+
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (!mixDest) mixDest = audioCtx.createMediaStreamDestination();
+
+      const micTrack = localStream.getAudioTracks()[0];
+      if (!micNode && micTrack) {
+        micNode = audioCtx.createMediaStreamSource(new MediaStream([micTrack]));
+        const micGain = audioCtx.createGain();
+        micGain.gain.value = 1.0;
+        micNode.connect(micGain).connect(mixDest);
+      }
+
+      sysNode = audioCtx.createMediaStreamSource(new MediaStream([sysTracks[0]]));
+      const sysGain = audioCtx.createGain();
+      sysGain.gain.value = 0.8;
+      sysNode.connect(sysGain).connect(mixDest);
+
+      mixedTrack = mixDest.stream.getAudioTracks()[0];
+      return mixedTrack;
+    }
+
+    function stopAudioMix() {
+      if (sysNode) { try { sysNode.disconnect(); } catch (e) { } sysNode = null; }
+      mixedTrack = null;
+    }
+
+    function currentAudioTrack() {
+      return mixedTrack || (localStream && localStream.getAudioTracks()[0]) || null;
+    }
+    function currentVideoTrack() {
+      if (screenStream) return screenStream.getVideoTracks()[0] || null;
+      return (localStream && localStream.getVideoTracks()[0]) || null;
+    }
+    function outgoingStream() {
+      return new MediaStream([currentAudioTrack(), currentVideoTrack()].filter(Boolean));
+    }
+
+    /* =========================================================================
+       3. SALA — criar código, entrar com código, e o encontro via PeerJS
+       ========================================================================= */
+    function randomCode(len = 6) {
+      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O/1/I, pra não confundir
+      let s = '';
+      for (let i = 0; i < len; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+      return s;
+    }
+    function peerIdOf(code, slot) { return `elo-${code}-${slot}`; }
+    function slotFromPeerId(id) {
+      const parts = String(id).split('-');
+      return parts.length === 3 && SLOT_ORDER.includes(parts[2]) ? parts[2] : null;
+    }
+    function shouldInitiate(slot) {
+      return SLOT_ORDER.indexOf(slot) < SLOT_ORDER.indexOf(ME.id);
+    }
+
+    /* Registra no broker um id específico. Resolve quando confirmado (id livre),
+       rejeita se o id já estiver em uso (err.type === 'unavailable-id') ou em
+       outro problema de rede/servidor. */
+    function registerPeer(id) {
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const p = new Peer(id, { config: ICE_CONFIG, debug: 0 });
+        p.once('open', () => { settled = true; resolve(p); });
+        p.once('error', (err) => {
+          if (settled) return;
+          settled = true;
+          try { p.destroy(); } catch (e) { }
+          reject(err);
+        });
+      });
+    }
+
+    function wirePeerGlobal(p) {
+      p.on('call', (call) => {
+        const slot = slotFromPeerId(call.peer);
+        if (!slot) return;
+        call.answer(outgoingStream());
+        registerLink(slot, { call });
+      });
+      p.on('connection', (conn) => {
+        const slot = slotFromPeerId(conn.peer);
+        if (!slot) return;
+        registerLink(slot, { conn });
+      });
+      p.on('disconnected', () => {
+        if (!document.body.classList.contains('in-call')) return;
+        setState('failed', 'sinal perdido — tentando reconectar');
+        try { p.reconnect(); } catch (e) { }
+      });
+      p.on('error', (err) => {
+        if (err && err.type === 'peer-unavailable') return; // esperado: a pessoa ainda não chegou
+        console.warn('Erro de sinalização:', err);
+        if (document.body.classList.contains('in-call')) {
+          $('peerHint').textContent = 'Problema no servidor de sinalização — tentando de novo sozinho.';
+        }
+      });
+    }
+
+    function registerLink(slot, { call, conn }) {
+      let link = links.get(slot);
+      if (!link) { link = { call: null, conn: null, name: null }; links.set(slot, link); }
+      if (call) {
+        if (!link.call) { link.call = call; wireCall(slot, call); }
+        else if (call !== link.call) { try { call.close(); } catch (e) { } }
+      }
+      if (conn) {
+        if (!link.conn) { link.conn = conn; wireConn(slot, conn); }
+        else if (conn !== link.conn) { try { conn.close(); } catch (e) { } }
+      }
+      return link;
+    }
+
+    function wireCall(slot, call) {
+      call.on('stream', (remoteStream) => {
+        const el = tileFor(slot);
+        el.classList.remove('waiting');
+        el.querySelector('video').srcObject = remoteStream;
+      });
+      call.on('close', () => teardownLink(slot));
+      const watchPc = () => {
+        const pc = call.peerConnection;
+        if (!pc) { setTimeout(watchPc, 150); return; }
+        pc.onconnectionstatechange = () => {
+          const st = pc.connectionState;
+          if (st === 'connected') {
+            setState('connected', 'conectado');
+            document.body.classList.add('in-call');
+            clearRetry(slot);
+          }
+          if (st === 'failed' || st === 'closed') teardownLink(slot);
+          refreshRoster();
+        };
+      };
+      watchPc();
+    }
+
+    function wireConn(slot, conn) {
+      conn.on('open', () => {
+        clearRetry(slot);
+        try { conn.send({ t: 'hello', name: ME.name }); } catch (e) { }
+        refreshRoster();
+      });
+      conn.on('data', (data) => handleData(slot, data));
+      conn.on('close', () => teardownLink(slot));
+    }
+
+    function handleData(slot, data) {
+      if (!data) return;
+      if (data.t === 'hello') return setPeerName(slot, data.name);
+      if (data.t === 'chat') return addMsg(data.text, 'them', nameFor(slot));
+    }
+
+    function teardownLink(slot) {
+      if (!links.has(slot)) return;
+      const link = links.get(slot);
+      try { link.call && link.call.close(); } catch (e) { }
+      try { link.conn && link.conn.close(); } catch (e) { }
+      links.delete(slot);
+      resetTile(slot);
+      refreshRoster();
+      if (peer && !peer.destroyed && shouldInitiate(slot)) scheduleRetry(slot);
+    }
+
+    /* Tenta ligar (mídia + canal de dados) para outro slot. Só quem "chegou
+       depois" (ver shouldInitiate) faz isso — o outro lado só escuta.
+       Se já existe uma tentativa que não vingou (não abriu o canal de dados),
+       descarta e cria outra — senão o retry nunca teria efeito nenhum. */
+    function attemptLink(slot) {
+      if (!peer || peer.destroyed) return;
+      const existing = links.get(slot);
+      if (existing && existing.conn && existing.conn.open) return; // já conectado
+      if (existing) {
+        try { existing.call && existing.call.close(); } catch (e) { }
+        try { existing.conn && existing.conn.close(); } catch (e) { }
+        links.delete(slot);
+      }
+      const id = peerIdOf(ME.roomCode, slot);
+      const opts = { metadata: { name: ME.name } };
+      let call, conn;
+      try {
+        call = peer.call(id, outgoingStream(), opts);
+        conn = peer.connect(id, opts);
+      } catch (e) { return; }
+      registerLink(slot, { call, conn });
+      scheduleRetry(slot);
+    }
+    function scheduleRetry(slot) {
+      clearRetry(slot);
+      if (!shouldInitiate(slot)) return;
+      const delay = slot === 'A' ? 2500 : 6000;
+      retryTimers.set(slot, setTimeout(() => {
+        retryTimers.delete(slot);
+        attemptLink(slot);
+      }, delay));
+    }
+    function clearRetry(slot) {
+      const t = retryTimers.get(slot);
+      if (t) { clearTimeout(t); retryTimers.delete(slot); }
+    }
+
+    /* Espera até um slot abrir o canal de dados (ou estourar o prazo). Usado
+       pelo convidado para confirmar que o código corresponde a uma sala real. */
+    function waitForOpen(slot, timeoutMs) {
+      return new Promise((resolve) => {
+        const iv = setInterval(() => {
+          const link = links.get(slot);
+          if (link && link.conn && link.conn.open) { clearInterval(iv); clearTimeout(to); resolve(true); }
+        }, 150);
+        const to = setTimeout(() => { clearInterval(iv); resolve(false); }, timeoutMs);
+      });
+    }
+
+    async function hostRoom(name) {
+      const token = ++opToken;
+      ME.name = name; ME.isHost = true; ME.id = 'A';
+      await startLocalMedia();
+      if (token !== opToken) return;
+      setState('connecting', 'criando sala');
+
+      let p = null;
+      for (let tries = 0; tries < 5 && !p; tries++) {
+        const code = randomCode();
+        try { p = await registerPeer(peerIdOf(code, 'A')); ME.roomCode = code; }
+        catch (err) { if (!(err && err.type === 'unavailable-id')) throw err; }
+      }
+      if (token !== opToken) { if (p) p.destroy(); return; }
+      if (!p) {
+        stopLocalMedia();
+        throw new Error('Não deu para criar a sala. Tente de novo em alguns segundos.');
+      }
+
+      peer = p;
+      wirePeerGlobal(peer);
+      enterCallUI();
+    }
+
+    async function joinRoom(code, name) {
+      const token = ++opToken;
+      ME.name = name; ME.isHost = false; ME.roomCode = code;
+      await startLocalMedia();
+      if (token !== opToken) return;
+      setState('connecting', 'entrando');
+
+      let p = null, slot = null;
+      for (const s of ['B', 'C']) {
+        try { p = await registerPeer(peerIdOf(code, s)); slot = s; break; }
+        catch (err) { if (!(err && err.type === 'unavailable-id')) throw err; }
+      }
+      if (token !== opToken) { if (p) p.destroy(); return; }
+      if (!p) {
+        stopLocalMedia();
+        const err = new Error('Essa sala já está cheia — três pessoas é o limite desta versão.');
+        err.code = 'full';
+        throw err;
+      }
+
+      ME.id = slot;
+      peer = p;
+      wirePeerGlobal(peer);
+      attemptLink('A');
+
+      const reachedHost = await waitForOpen('A', 12000);
+      if (token !== opToken) return;
+      if (!reachedHost) {
+        teardownEverything();
+        stopLocalMedia();
+        ME.id = null; ME.isHost = false; ME.roomCode = null;
+        throw new Error('Não encontramos ninguém com esse código. Confira e tente de novo.');
+      }
+
+      enterCallUI();
+    }
+
+    function enterCallUI() {
+      document.body.classList.add('in-call');
+      prepareRoomTiles(ME.id);
+      updateRoomPanel();
+      $('selfTag').textContent = ME.name || 'você';
+      setState(links.size ? 'connected' : 'connecting', ME.isHost ? 'sala aberta' : 'conectado');
+      for (const slot of SLOT_ORDER) {
+        if (slot !== ME.id && shouldInitiate(slot) && !links.has(slot)) attemptLink(slot);
+      }
+      if (ME.isHost) openPanel('roomPanel');
+      refreshRoster();
+    }
+
+    function updateRoomPanel() {
+      $('roomCodeChip').textContent = ME.roomCode || '------';
+      const free = 2 - links.size;
+      $('roomNote').textContent = free > 0
+        ? `Envie esse código para mais ${free === 1 ? 'uma pessoa' : 'duas pessoas'} por qualquer canal (WhatsApp, SMS, voz).`
+        : 'Sala cheia — três pessoas é o limite desta versão.';
+    }
+
+    /* =========================================================================
+       4. GRADE DE VÍDEO
+       ========================================================================= */
+    function prepareRoomTiles(mySlot) {
+      for (const slot of SLOT_ORDER) {
+        if (slot !== mySlot) tileFor(slot);
+      }
+    }
+    function makeWaitingTile(slot) {
+      const el = document.createElement('div');
+      el.className = 'vtile waiting';
+      el.id = 'tile-' + slot;
+      const v = document.createElement('video');
+      v.autoplay = true; v.playsInline = true;
+      const tag = document.createElement('div');
+      tag.className = 'tag';
+      tag.id = 'tag-' + slot;
+      tag.textContent = LABEL[slot] || slot;
+      el.append(v, tag);
+      $('grid').appendChild(el);
+      return el;
+    }
+    function tileFor(slot) { return $('tile-' + slot) || makeWaitingTile(slot); }
+    function resetTile(slot) {
+      const el = $('tile-' + slot);
+      if (!el) return;
+      el.classList.add('waiting');
+      el.querySelector('video').srcObject = null;
+      $('tag-' + slot).textContent = LABEL[slot] || slot;
+    }
+    function setPeerName(slot, name) {
+      const link = links.get(slot);
+      if (link) link.name = name || null;
+      const tag = $('tag-' + slot);
+      if (tag && name) tag.textContent = name;
+      refreshRoster();
+    }
+    function nameFor(slot) {
+      const link = links.get(slot);
+      return (link && link.name) || LABEL[slot] || slot;
+    }
+
+    /* =========================================================================
+       5. CONTROLES
+       ========================================================================= */
+    $('btnMic').onclick = () => {
+      const t = localStream && localStream.getAudioTracks()[0];
+      if (!t) return;
+      t.enabled = !t.enabled;
+      $('btnMic').classList.toggle('off', !t.enabled);
+    };
+
+    $('btnCam').onclick = () => {
+      const t = localStream && localStream.getVideoTracks()[0];
+      if (!t) return;
+      t.enabled = !t.enabled;
+      $('btnCam').classList.toggle('off', !t.enabled);
+    };
+
+    /* Compartilhar tela: troca vídeo E áudio em TODAS as conexões de uma vez.
+       replaceTrack não mexe na negociação, então ninguém precisa de código novo. */
+    async function swapOutgoing() {
+      const audio = currentAudioTrack();
+      const video = currentVideoTrack();
+      for (const link of links.values()) {
+        const pc = link.call && link.call.peerConnection;
+        if (!pc) continue;
+        for (const sender of pc.getSenders()) {
+          if (!sender.track) continue;
+          if (sender.track.kind === 'audio' && audio) await sender.replaceTrack(audio);
+          if (sender.track.kind === 'video' && video) await sender.replaceTrack(video);
+        }
+      }
+    }
+
+    $('btnScreen').onclick = async () => {
+      if (screenStream) {                                   // parar de compartilhar
+        screenStream.getTracks().forEach(t => t.stop());
+        screenStream = null;
+        stopAudioMix();
+        await swapOutgoing();
+        $('selfVideo').srcObject = localStream;
+        $('tileSelf').classList.remove('sharing');
+        $('selfTag').textContent = ME.name || 'você';
+        $('btnScreen').classList.remove('on');
+        return;
+      }
+
+      try {
+        // audio:true faz aparecer a caixinha "Compartilhar áudio da guia/sistema".
+        // No app Electron, escolher a tela/janela some por um seletor próprio
+        // (com miniaturas) — veja a seção 7 mais abaixo.
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: {
+            echoCancellation: false,   // é áudio de sistema, não de microfone:
+            noiseSuppression: false,   // qualquer "limpeza" aqui só estraga a música
+            autoGainControl: false
+          }
+        });
+
+        const hasAudio = Boolean(startAudioMix(screenStream));
+        await swapOutgoing();
+
+        $('selfVideo').srcObject = screenStream;
+        $('tileSelf').classList.add('sharing');
+        $('selfTag').textContent = hasAudio ? 'sua tela + som' : 'sua tela (sem som)';
+        $('btnScreen').classList.add('on');
+        if (!hasAudio) {
+          $('peerHint').textContent = 'Sem som: marque "Compartilhar áudio" ao escolher a tela.';
+          setTimeout(() => { if (screenStream) $('peerHint').textContent = ''; }, 6000);
+        }
+
+        // Botão "Parar de compartilhar" da barra do navegador/sistema
+        screenStream.getVideoTracks()[0].onended = () => $('btnScreen').click();
+      } catch (err) {
+        screenStream = null;   // a pessoa cancelou o seletor
+      }
+    };
+
+    $('btnRoom').onclick = () => {
+      const wasOpen = $('roomPanel').classList.contains('open');
+      openPanel(wasOpen ? null : 'roomPanel');
+    };
+
+    $('btnChat').onclick = () => {
+      const wasOpen = $('chatPanel').classList.contains('open');
+      openPanel(wasOpen ? null : 'chatPanel');
+    };
+
+    $('btnHang').onclick = () => hangUp();
+
+    function openPanel(id) {
+      ['roomPanel', 'chatPanel'].forEach(p => $(p).classList.toggle('open', p === id));
+      $('btnRoom').classList.toggle('on', id === 'roomPanel');
+      $('btnChat').classList.toggle('on', id === 'chatPanel');
+    }
+
+    function teardownEverything() {
+      for (const slot of [...links.keys()]) teardownLink(slot);
+      links.clear();
+      for (const slot of [...retryTimers.keys()]) clearRetry(slot);
+      if (peer) { const p = peer; peer = null; try { p.destroy(); } catch (e) { } }
+    }
+
+    /* Desliga câmera/mic/tela. Separado de hangUp() porque também precisa
+       rodar quando a sala nunca chega a abrir (código errado, sala cheia) —
+       senão a câmera fica ligada mesmo o app voltando pro lobby. */
+    function stopLocalMedia() {
+      [localStream, screenStream].forEach(s => s && s.getTracks().forEach(t => t.stop()));
+      localStream = screenStream = null;
+      stopAudioMix();
+      if (micNode) { try { micNode.disconnect(); } catch (e) { } micNode = null; }
+      if (audioCtx) { try { audioCtx.close(); } catch (e) { } audioCtx = null; mixDest = null; }
+      $('selfVideo').srcObject = null;
+    }
+
+    function hangUp() {
+      ++opToken; // invalida qualquer hostRoom()/joinRoom() ainda em andamento
+      teardownEverything();
+      stopLocalMedia();
+      ME.id = null; ME.isHost = false; ME.roomCode = null;
+      document.body.classList.remove('in-call');
+      setState('idle', 'desconectado');
+      show('screenChoose');
+      $('codeInput').value = '';
+      $('msgs').innerHTML = '';
+      document.querySelectorAll('.vtile:not(.me)').forEach(el => el.remove());
+      document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('off', 'on'));
+      openPanel(null);
+      refreshRoster();
+      hideErr('hostError'); hideErr('guestError');
+      setBusy(false);
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (!document.body.classList.contains('in-call')) return;
+      if (e.target.matches('input, textarea')) return;
+      if (e.key === 'm') $('btnMic').click();
+      if (e.key === 'v') $('btnCam').click();
+      if (e.key === 's') $('btnScreen').click();
+    });
+
+    /* =========================================================================
+       6. CHAT — vai direto para cada participante conectado
+       ========================================================================= */
+    $('chatForm').onsubmit = (e) => {
+      e.preventDefault();
+      const text = $('chatInput').value.trim();
+      if (!text) return;
+      for (const link of links.values()) {
+        if (link.conn && link.conn.open) link.conn.send({ t: 'chat', text });
+      }
+      addMsg(text, 'me');
+      $('chatInput').value = '';
+    };
+
+    function addMsg(text, who, author) {
+      const el = document.createElement('div');
+      el.className = 'msg ' + who;
+      if (author) {
+        const w = document.createElement('span');
+        w.className = 'who'; w.textContent = author;
+        el.appendChild(w);
+      }
+      el.appendChild(document.createTextNode(text));
+      $('msgs').appendChild(el);
+      const body = $('msgs').parentElement;
+      body.scrollTop = body.scrollHeight;
+    }
+
+    /* =========================================================================
+       7. SELETOR DE TELA/JANELA — só existe dentro do app Electron
+       (preload.js expõe window.eloDesktop; no navegador comum o próprio
+       navegador mostra seu seletor nativo e nada disto entra em ação)
+       ========================================================================= */
+    if (window.eloDesktop) {
+      window.eloDesktop.onPickScreenSource((sources) => {
+        const list = $('sourceList');
+        list.innerHTML = '';
+        sources.forEach((src) => {
+          const b = document.createElement('button');
+          b.className = 'source-btn';
+          b.type = 'button';
+          const img = document.createElement('img');
+          img.src = src.thumbnail || '';
+          img.alt = '';
+          const span = document.createElement('span');
+          span.textContent = (src.isScreen ? '🖥 ' : '▢ ') + src.name;
+          b.append(img, span);
+          b.onclick = () => {
+            window.eloDesktop.chooseScreenSource(src.id);
+            $('sourceModal').classList.add('hidden');
+          };
+          list.appendChild(b);
+        });
+        $('sourceModal').classList.remove('hidden');
+      });
+      $('cancelSource').onclick = () => {
+        $('sourceModal').classList.add('hidden');
+        window.eloDesktop.chooseScreenSource(null);
+      };
+    }
+
+    /* =========================================================================
+       8. LOBBY — criar sala / entrar com código
+       ========================================================================= */
+    $('displayName').value = localStorage.getItem('elo:name') || '';
+    $('displayName').addEventListener('change', () => {
+      localStorage.setItem('elo:name', $('displayName').value.trim());
+    });
+
+    function setBusy(busy) {
+      $('btnHost').disabled = busy;
+      $('btnGuest').disabled = busy;
+      $('btnJoin').disabled = busy;
+      $('guestBack').disabled = busy;
+    }
+
+    $('btnHost').onclick = async () => {
+      hideErr('hostError');
+      setBusy(true);
+      try {
+        await hostRoom($('displayName').value.trim());
+      } catch (err) {
+        setBusy(false);
+        setState('idle', 'desconectado');
+        fail('hostError', err);
+      }
+    };
+
+    $('btnGuest').onclick = () => {
+      hideErr('hostError');
+      show('screenGuest');
+      setTimeout(() => $('codeInput').focus(), 30);
+    };
+
+    $('codeInput').addEventListener('input', () => {
+      $('codeInput').value = $('codeInput').value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    });
+    $('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btnJoin').click(); });
+
+    $('btnJoin').onclick = async () => {
+      const code = $('codeInput').value.trim();
+      if (code.length < 4) return fail('guestError', new Error('Digite o código completo.'));
+      hideErr('guestError');
+      setBusy(true);
+      try {
+        await joinRoom(code, $('displayName').value.trim());
+      } catch (err) {
+        setBusy(false);
+        setState('idle', 'desconectado');
+        fail('guestError', err);
+      }
+    };
+
+    document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => hangUp());
+
+    /* =========================================================================
+       9. UTILITÁRIOS
+       ========================================================================= */
+    function show(id) {
+      ['screenChoose', 'screenGuest'].forEach(s => $(s).classList.toggle('hidden', s !== id));
+    }
+    function fail(errId, err) {
+      const el = $(errId);
+      el.textContent = (err && err.message) || String(err);
+      el.classList.remove('hidden');
+      console.error(err);
+    }
+    function hideErr(id) { $(id).classList.add('hidden'); }
+
+    async function copyText(text, btn) {
+      if (!text) return;
+      try { await navigator.clipboard.writeText(text); }
+      catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+      }
+      const old = btn.textContent;
+      btn.textContent = 'Copiado';
+      setTimeout(() => btn.textContent = old, 1400);
+    }
+    $('copyRoomCode').onclick = (e) => {
+      const msg = `Entra na minha videochamada pelo Elo — código: ${ME.roomCode}`;
+      copyText(msg, e.currentTarget);
+    };
+
+    if (!HAS_TURN) {
+      const warn = document.createElement('div');
+      warn.className = 'note';
+      warn.textContent = 'TURN não configurado: com três pessoas são três conexões, '
+        + 'e basta uma falhar para alguém ficar de fora. '
+        + 'Preencha o bloco TURN no topo do index.html.';
+      $('screenChoose').appendChild(warn);
+    }
+  </script>
+</body>
+
+</html>

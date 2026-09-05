@@ -1,0 +1,38 @@
+{
+  "name": "elo",
+  "version": "2.2.0",
+  "description": "Chamada de vídeo em malha para até 3 pessoas, ponto a ponto, com entrada por código curto de sala.",
+  "author": "Kayan",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "dev.kayan.elo",
+    "productName": "Elo",
+    "files": ["main.js", "preload.js", "index.html", "package.json", "vendor/**/*"],
+    "win": { "target": "nsis" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.social-networking",
+      "extendInfo": {
+        "NSCameraUsageDescription": "O Elo usa a câmera para a chamada de vídeo.",
+        "NSMicrophoneUsageDescription": "O Elo usa o microfone para a chamada de voz."
+      }
+    },
+    "linux": { "target": "AppImage", "category": "Network" }
+  }
+}

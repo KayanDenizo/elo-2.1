@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Elo — chamada direta</title>
+<style>
+/* ==========================================================================
+   TOKENS — paleta "estação de rádio noturna"
+   O app é sobre trocar códigos e abrir um canal, então a identidade visual
+   vem de mostradores de rádio: fundo escuro, âmbar de sinal, verde de enlace.
+   Fontes: só stacks do sistema + monoespaçada. Nada de CDN — o app precisa
+   funcionar 100% offline dentro do Electron.
+   ========================================================================== */
+:root{
+  --bg:        #0E1116;
+  --surface:   #171C24;
+  --surface-2: #1E242E;
+  --line:      #2A323F;
+  --text:      #E6EAF0;
+  --muted:     #8A94A6;
+  --signal:    #FFB020;  /* âmbar: aguardando / em transmissão */
+  --link:      #3DDC97;  /* verde: enlace estabelecido */
+  --danger:    #FF5C5C;
+
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --r: 10px;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; }
+
+html, body{ height:100%; }
+
+body{
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow: hidden;
+  /* leve textura de "ruído de rádio" no fundo, bem discreta */
+  background-image: radial-gradient(circle at 50% -20%, #1B2430 0%, var(--bg) 60%);
+}
+
+button{ font: inherit; color: inherit; cursor: pointer; border: none; background: none; }
+button:focus-visible, input:focus-visible, textarea:focus-visible{
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+/* ---------- Barra de status (assinatura visual do app) ------------------- */
+.statusbar{
+  height: 46px;
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(23,28,36,.6);
+  backdrop-filter: blur(8px);
+  position: relative; z-index: 5;
+}
+.brand{
+  font-family: var(--mono);
+  font-size: 13px; font-weight: 700;
+  letter-spacing: .22em; text-transform: uppercase;
+}
+.brand span{ color: var(--signal); }
+
+/* Indicador de sinal: 3 barrinhas que acendem conforme o estado da conexão */
+.signal{ display:flex; align-items:flex-end; gap:3px; height:16px; }
+.signal i{
+  width:4px; background: var(--line); border-radius:1px;
+  transition: background .3s ease;
+}
+.signal i:nth-child(1){ height:6px; }
+.signal i:nth-child(2){ height:11px; }
+.signal i:nth-child(3){ height:16px; }
+body[data-state="connecting"] .signal i:nth-child(-n+2){ background: var(--signal); animation: pulse 1.1s infinite; }
+body[data-state="connected"]  .signal i{ background: var(--link); }
+body[data-state="failed"]     .signal i:nth-child(1){ background: var(--danger); }
+@keyframes pulse{ 50%{ opacity:.25 } }
+
+.status-text{
+  font-family: var(--mono); font-size: 12px; letter-spacing:.08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.spacer{ flex:1; }
+.hint{ font-size:12px; color: var(--muted); }
+
+/* ---------- Lobby (pareamento) ------------------------------------------ */
+.stage{ height: calc(100% - 46px); position: relative; }
+
+.lobby{
+  height:100%; display:flex; align-items:center; justify-content:center;
+  padding: 24px; overflow-y: auto;
+}
+.card{
+  width: 100%; max-width: 560px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 28px;
+}
+.eyebrow{
+  font-family: var(--mono); font-size: 11px; letter-spacing:.2em;
+  text-transform: uppercase; color: var(--signal); margin-bottom: 10px;
+}
+h1{ font-size: 26px; line-height:1.2; font-weight: 650; margin-bottom: 8px; letter-spacing:-.01em; }
+.sub{ color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+
+.choice{ display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 520px){ .choice{ grid-template-columns: 1fr; } }
+
+.tile{
+  text-align:left; padding: 16px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r); transition: border-color .18s ease, transform .18s ease;
+}
+.tile:hover{ border-color: var(--signal); transform: translateY(-2px); }
+.tile b{ display:block; font-size:15px; margin-bottom:4px; }
+.tile small{ color: var(--muted); font-size: 13px; line-height:1.45; display:block; }
+
+/* Passos do pareamento */
+.step{ margin-top: 22px; }
+.step-label{
+  font-family: var(--mono); font-size: 11px; letter-spacing:.16em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+  display:flex; align-items:center; gap:8px;
+}
+.step-label b{ color: var(--signal); }
+
+textarea{
+  width:100%; min-height: 92px; resize: vertical;
+  background: #0B0E13; color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px; font-family: var(--mono); font-size: 12px; line-height:1.5;
+  word-break: break-all;
+}
+textarea::placeholder{ color:#4B5568; }
+
+.row{ display:flex; gap:10px; margin-top: 12px; flex-wrap: wrap; }
+
+.btn{
+  padding: 11px 18px; border-radius: 8px; font-size: 14px; font-weight: 600;
+  border: 1px solid var(--line); background: var(--surface-2);
+  transition: background .15s ease, border-color .15s ease;
+}
+.btn:hover{ border-color: var(--muted); }
+.btn.primary{ background: var(--signal); color:#1A1206; border-color: var(--signal); }
+.btn.primary:hover{ filter: brightness(1.08); }
+.btn:disabled{ opacity:.45; cursor: not-allowed; }
+
+.note{
+  margin-top: 18px; padding: 12px 14px; border-radius: 8px;
+  background: rgba(255,176,32,.07); border-left: 2px solid var(--signal);
+  font-size: 13px; color: #D8C09A;
+}
+.error{
+  margin-top: 14px; padding: 12px 14px; border-radius: 8px;
+  background: rgba(255,92,92,.08); border-left: 2px solid var(--danger);
+  font-size: 13px; color: #FFB3B3;
+}
+.hidden{ display: none !important; }
+
+/* ---------- Chamada ----------------------------------------------------- */
+.call{ height:100%; display:none; }
+body.in-call .lobby{ display:none; }
+body.in-call .call{ display:block; }
+
+.videos{ position: relative; height: 100%; background:#08090C; }
+#remoteVideo{ width:100%; height:100%; object-fit: contain; background:#08090C; }
+
+.self{
+  position:absolute; right:16px; bottom:96px;
+  width: 220px; aspect-ratio: 16/9;
+  border-radius: 8px; overflow:hidden;
+  border: 1px solid var(--line); background:#000;
+  box-shadow: 0 8px 28px rgba(0,0,0,.5);
+}
+.self video{ width:100%; height:100%; object-fit: cover; transform: scaleX(-1); }
+.self.sharing video{ transform:none; object-fit: contain; }
+.self-tag{
+  position:absolute; left:6px; bottom:6px;
+  font-family: var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+  background: rgba(0,0,0,.6); padding: 2px 6px; border-radius:4px; color: var(--muted);
+}
+@media (max-width: 640px){ .self{ width:130px; bottom:88px; right:10px; } }
+
+.dock{
+  position:absolute; left:50%; bottom:20px; transform: translateX(-50%);
+  display:flex; gap:8px; padding:8px;
+  background: rgba(23,28,36,.92); border:1px solid var(--line);
+  border-radius: 14px; backdrop-filter: blur(10px);
+}
+.ctrl{
+  width:46px; height:46px; border-radius:10px;
+  background: var(--surface-2); border:1px solid transparent;
+  display:grid; place-items:center;
+  transition: background .15s ease;
+}
+.ctrl:hover{ background:#2A323F; }
+.ctrl.off{ background: rgba(255,92,92,.16); color: var(--danger); }
+.ctrl.on{ background: rgba(61,220,151,.16); color: var(--link); }
+.ctrl.hang{ background: var(--danger); color:#fff; width:58px; }
+.ctrl svg{ width:20px; height:20px; fill:none; stroke: currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+
+/* ---------- Chat -------------------------------------------------------- */
+.chat{
+  position:absolute; top:0; right:0; bottom:0; width: 320px;
+  background: var(--surface); border-left:1px solid var(--line);
+  display:flex; flex-direction:column;
+  transform: translateX(100%); transition: transform .22s ease;
+}
+.chat.open{ transform: none; }
+.chat header{
+  padding: 12px 14px; border-bottom:1px solid var(--line);
+  font-family: var(--mono); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color: var(--muted);
+}
+.msgs{ flex:1; overflow-y:auto; padding: 14px; display:flex; flex-direction:column; gap:8px; }
+.msg{ max-width: 85%; padding:8px 11px; border-radius:10px; font-size:14px; word-break: break-word; }
+.msg.me{ align-self:flex-end; background: var(--surface-2); }
+.msg.them{ align-self:flex-start; background: rgba(255,176,32,.12); }
+.chat form{ display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); }
+.chat input{
+  flex:1; background:#0B0E13; border:1px solid var(--line); border-radius:8px;
+  padding:9px 11px; color: var(--text); font-size:14px;
+}
+@media (max-width: 640px){ .chat{ width: 100%; } }
+
+@media (prefers-reduced-motion: reduce){
+  *{ animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body data-state="idle">
+
+<!-- ====================== BARRA DE STATUS ============================== -->
+<div class="statusbar">
+  <div class="brand">E<span>L</span>O</div>
+  <div class="signal" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="status-text" id="statusText">desconectado</div>
+  <div class="spacer"></div>
+  <div class="hint" id="peerHint"></div>
+</div>
+
+<div class="stage">
+
+  <!-- ====================== LOBBY / PAREAMENTO ========================= -->
+  <div class="lobby">
+    <div class="card">
+
+      <!-- Tela 0: escolher papel -->
+      <div id="screenChoose">
+        <div class="eyebrow">Chamada ponto a ponto</div>
+        <h1>Abrir um canal com uma pessoa</h1>
+        <p class="sub">
+          Sem conta, sem servidor no meio. Vocês trocam um código uma única vez
+          (WhatsApp, Discord, e-mail — tanto faz) e o vídeo passa direto de um
+          computador para o outro.
+        </p>
+        <div class="choice">
+          <button class="tile" id="btnHost">
+            <b>Eu começo a chamada</b>
+            <small>Gera o primeiro código e envia para a outra pessoa.</small>
+          </button>
+          <button class="tile" id="btnGuest">
+            <b>Já recebi um código</b>
+            <small>Cola o código do amigo e devolve a resposta.</small>
+          </button>
+        </div>
+        <div class="note">
+          Antes de tudo: o navegador vai pedir permissão de câmera e microfone.
+          Dá pra recusar a câmera e entrar só com áudio.
+        </div>
+      </div>
+
+      <!-- Tela A: quem inicia -->
+      <div id="screenHost" class="hidden">
+        <div class="eyebrow">Você iniciou</div>
+        <h1>Envie o código 1</h1>
+        <p class="sub">Copie o bloco abaixo e mande para a pessoa. Ela vai devolver um segundo código.</p>
+
+        <div class="step">
+          <div class="step-label"><b>01</b> Seu código — envie este</div>
+          <textarea id="hostOffer" readonly placeholder="Gerando…"></textarea>
+          <div class="row">
+            <button class="btn primary" id="copyOffer" disabled>Copiar código 1</button>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-label"><b>02</b> Resposta do amigo — cole aqui</div>
+          <textarea id="hostAnswer" placeholder="Cole aqui o código 2 que a outra pessoa gerou"></textarea>
+          <div class="row">
+            <button class="btn primary" id="acceptAnswer">Conectar</button>
+            <button class="btn" data-back>Voltar</button>
+          </div>
+        </div>
+        <div class="error hidden" id="hostError"></div>
+      </div>
+
+      <!-- Tela B: quem entra -->
+      <div id="screenGuest" class="hidden">
+        <div class="eyebrow">Você foi convidado</div>
+        <h1>Responda ao código</h1>
+
+        <div class="step">
+          <div class="step-label"><b>01</b> Código do amigo — cole aqui</div>
+          <textarea id="guestOffer" placeholder="Cole aqui o código 1 que você recebeu"></textarea>
+          <div class="row">
+            <button class="btn primary" id="makeAnswer">Gerar resposta</button>
+            <button class="btn" data-back>Voltar</button>
+          </div>
+        </div>
+
+        <div class="step hidden" id="guestStep2">
+          <div class="step-label"><b>02</b> Sua resposta — envie de volta</div>
+          <textarea id="guestAnswer" readonly></textarea>
+          <div class="row">
+            <button class="btn primary" id="copyAnswer">Copiar código 2</button>
+          </div>
+          <div class="note">Assim que a outra pessoa colar isso, a chamada abre sozinha.</div>
+        </div>
+        <div class="error hidden" id="guestError"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ====================== CHAMADA ==================================== -->
+  <div class="call">
+    <div class="videos">
+      <video id="remoteVideo" autoplay playsinline></video>
+
+      <div class="self" id="selfBox">
+        <video id="selfVideo" autoplay playsinline muted></video>
+        <div class="self-tag" id="selfTag">você</div>
+      </div>
+
+      <div class="dock">
+        <button class="ctrl" id="btnMic" title="Microfone (M)">
+          <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/></svg>
+        </button>
+        <button class="ctrl" id="btnCam" title="Câmera (V)">
+          <svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 11l6-3v8l-6-3z"/></svg>
+        </button>
+        <button class="ctrl" id="btnScreen" title="Compartilhar tela (S)">
+          <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        </button>
+        <button class="ctrl" id="btnChat" title="Chat">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+        <button class="ctrl hang" id="btnHang" title="Encerrar">
+          <svg viewBox="0 0 24 24"><path d="M2 10.5c5.5-4 14.5-4 20 0v3.2c0 .8-.7 1.4-1.5 1.3l-3.3-.5a1.5 1.5 0 0 1-1.2-1.2l-.3-1.7c-2.3-.8-4.7-.8-7 0l-.3 1.7a1.5 1.5 0 0 1-1.2 1.2l-3.3.5A1.4 1.4 0 0 1 2 13.7z"/></svg>
+        </button>
+      </div>
+
+      <aside class="chat" id="chatPanel">
+        <header>Recado rápido</header>
+        <div class="msgs" id="msgs"></div>
+        <form id="chatForm">
+          <input id="chatInput" placeholder="Escreva…" autocomplete="off" />
+          <button class="btn primary" type="submit">Ir</button>
+        </form>
+      </aside>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ===========================================================================
+   ELO — chamada 1:1 com WebRTC puro, sem servidor de sinalização.
+   ---------------------------------------------------------------------------
+   COMO ISSO FUNCIONA (é o coração do WebRTC, vale entender):
+
+   1. Cada lado cria um RTCPeerConnection e coloca ali suas trilhas (câmera/mic).
+   2. Quem liga gera uma OFERTA (SDP): "eu falo estes codecs, estou nestes IPs".
+   3. Os servidores STUN do Google respondem "seu IP público é X" — esses
+      endereços viram "ICE candidates" e entram dentro do SDP.
+   4. Normalmente um servidor de sinalização entrega esse SDP para o outro lado.
+      Aqui NÃO tem servidor: você mesmo copia e cola o texto. É a mesma
+      informação, só que transportada no braço.
+   5. O outro lado responde com uma RESPOSTA (SDP), e a conexão sobe direto
+      entre os dois computadores. O vídeo nunca passa por terceiros.
+
+   DETALHE DE PROJETO: as trilhas são adicionadas ANTES da oferta e o
+   compartilhamento de tela usa replaceTrack(). Assim nunca é preciso
+   renegociar — ou seja, vocês trocam código uma vez só, e pronto.
+   =========================================================================== */
+
+/* ┌──────────────────────────────────────────────────────────────────────┐
+   │  CONFIGURE AQUI — servidor TURN                                      │
+   │                                                                      │
+   │  O STUN sozinho só descobre seu IP público. Quando a operadora usa   │
+   │  CGNAT ou NAT simétrica (comum no Brasil), o caminho direto não      │
+   │  existe e a chamada falha. O TURN resolve retransmitindo o vídeo.    │
+   │                                                                      │
+   │  Como pegar suas credenciais (grátis, 20 GB/mês):                    │
+   │    1. dashboard.metered.ca/signup                                    │
+   │    2. dê um nome ao app → escolha o plano Free                       │
+   │    3. clique em "Generate Credential"                                │
+   │    4. cole usuário e senha abaixo                                    │
+   │                                                                      │
+   │  Deixando em branco, o app roda só com STUN (pode falhar).           │
+   └──────────────────────────────────────────────────────────────────────┘ */
+const TURN = {
+  host:     'standard.relay.metered.ca',
+  username: '',   // <-- cole aqui
+  password: ''    // <-- e aqui
+};
+
+/* Monta a lista de servidores. As várias portas não são redundância boba:
+   80 e 443 são as que passam em rede que bloqueia o resto, e a variante
+   ?transport=tcp cobre firewall que barra UDP. */
+function buildIceConfig(){
+  const servers = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+  ];
+  if (TURN.username && TURN.password){
+    const cred = { username: TURN.username, credential: TURN.password };
+    servers.push(
+      { urls: `turn:${TURN.host}:80`,                 ...cred },
+      { urls: `turn:${TURN.host}:80?transport=tcp`,   ...cred },
+      { urls: `turn:${TURN.host}:443`,                ...cred },
+      { urls: `turns:${TURN.host}:443?transport=tcp`, ...cred }
+    );
+  }
+  return { iceServers: servers };
+}
+
+const ICE_CONFIG = buildIceConfig();
+const HAS_TURN = Boolean(TURN.username && TURN.password);
+
+/* ---------- estado global ------------------------------------------------ */
+let pc = null;             // a conexão
+let localStream = null;    // câmera + microfone
+let screenStream = null;   // tela, quando estiver compartilhando
+let remoteStream = new MediaStream();
+let dataChannel = null;
+let role = null;           // 'host' | 'guest'
+
+/* ---------- atalhos de DOM ---------------------------------------------- */
+const $ = id => document.getElementById(id);
+const remoteVideo = $('remoteVideo');
+const selfVideo   = $('selfVideo');
+remoteVideo.srcObject = remoteStream;
+
+/* ---------- estado visual da barra de sinal ------------------------------ */
+function setState(state, label){
+  document.body.dataset.state = state;
+  $('statusText').textContent = label;
+}
+
+/* =========================================================================
+   1. MÍDIA LOCAL
+   ========================================================================= */
+async function startLocalMedia(){
+  if (localStream) return localStream;
+  try{
+    localStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: { echoCancellation: true, noiseSuppression: true }
+    });
+  }catch(err){
+    // Sem câmera (ou permissão negada) → tenta só áudio, em vez de travar tudo.
+    console.warn('Câmera indisponível, tentando só áudio:', err);
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  }
+  selfVideo.srcObject = localStream;
+  return localStream;
+}
+
+/* =========================================================================
+   2. CONEXÃO
+   ========================================================================= */
+function createPeer(){
+  pc = new RTCPeerConnection(ICE_CONFIG);
+
+  // Toda trilha que chega do outro lado entra no stream remoto.
+  pc.ontrack = (e) => {
+    remoteStream.addTrack(e.track);
+  };
+
+  pc.onconnectionstatechange = () => {
+    const s = pc.connectionState;
+    if (s === 'connected'){
+      setState('connected', 'conectado');
+      document.body.classList.add('in-call');
+      reportPath();   // direto ou via relay?
+    } else if (s === 'connecting'){
+      setState('connecting', 'negociando');
+    } else if (s === 'disconnected'){
+      setState('connecting', 'sinal instável');
+    } else if (s === 'failed' || s === 'closed'){
+      setState('failed', s === 'failed' ? 'falhou' : 'encerrado');
+      $('peerHint').textContent = s !== 'failed' ? ''
+        : HAS_TURN
+          ? 'Nem o relay passou — confira as credenciais do TURN.'
+          : 'Sem caminho direto. Configure o TURN no topo do index.html.';
+    }
+  };
+
+  // Chat por RTCDataChannel: quem liga cria, quem entra escuta.
+  if (role === 'host'){
+    dataChannel = pc.createDataChannel('chat');
+    wireDataChannel(dataChannel);
+  } else {
+    pc.ondatachannel = (e) => { dataChannel = e.channel; wireDataChannel(dataChannel); };
+  }
+
+  return pc;
+}
+
+// Espera o ICE terminar de descobrir os endereços, para caber tudo num código só.
+function waitForIce(pc){
+  return new Promise(resolve => {
+    if (pc.iceGatheringState === 'complete') return resolve();
+    const done = () => { pc.removeEventListener('icegatheringstatechange', check); resolve(); };
+    const check = () => { if (pc.iceGatheringState === 'complete') done(); };
+    pc.addEventListener('icegatheringstatechange', check);
+    // Rede lenta não pode travar o app: 6s é tempo de sobra para STUN.
+    setTimeout(done, 6000);
+  });
+}
+
+// Coloca as trilhas locais nos transceivers certos (por tipo, não por ordem).
+async function attachLocalTracks(){
+  const audio = localStream.getAudioTracks()[0] || null;
+  const video = localStream.getVideoTracks()[0] || null;
+  const tAudio = transceiverFor('audio');
+  const tVideo = transceiverFor('video');
+  if (tAudio){ tAudio.direction = 'sendrecv'; await tAudio.sender.replaceTrack(audio); }
+  if (tVideo){ tVideo.direction = 'sendrecv'; await tVideo.sender.replaceTrack(video); }
+}
+
+function transceiverFor(kind){
+  if (!pc) return null;
+  return pc.getTransceivers().find(t =>
+    (t.receiver && t.receiver.track && t.receiver.track.kind === kind) ||
+    (t.sender && t.sender.track && t.sender.track.kind === kind)
+  );
+}
+
+/* =========================================================================
+   3. CÓDIGOS — o SDP é grande, então comprime em gzip e vira base64.
+      Sem compressão o texto fica ~4x maior e ninguém cola isso no WhatsApp.
+   ========================================================================= */
+async function encode(obj){
+  const json = JSON.stringify(obj);
+  if (typeof CompressionStream === 'undefined') return 'r' + b64(new TextEncoder().encode(json));
+  const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+  const buf = await new Response(stream).arrayBuffer();
+  return 'z' + b64(new Uint8Array(buf));
+}
+
+async function decode(str){
+  const clean = str.trim().replace(/\s+/g, '');
+  const flag = clean[0];
+  const bytes = unb64(clean.slice(1));
+  if (flag === 'r') return JSON.parse(new TextDecoder().decode(bytes));
+  if (flag !== 'z') throw new Error('formato');
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(stream).text());
+}
+
+function b64(bytes){
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+function unb64(str){
+  const bin = atob(str);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/* =========================================================================
+   4. FLUXO — quem inicia
+   ========================================================================= */
+$('btnHost').onclick = async () => {
+  role = 'host';
+  show('screenHost');
+  setState('connecting', 'gerando código');
+  try{
+    await startLocalMedia();
+    createPeer();
+    // Cria os dois canais ANTES da oferta: áudio, vídeo. Assim o
+    // compartilhamento de tela depois é só um replaceTrack.
+    pc.addTransceiver('audio', { direction: 'sendrecv' });
+    pc.addTransceiver('video', { direction: 'sendrecv' });
+    await attachLocalTracks();
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await waitForIce(pc);
+
+    $('hostOffer').value = await encode(pc.localDescription);
+    $('copyOffer').disabled = false;
+    setState('connecting', 'aguardando resposta');
+  }catch(err){
+    fail('hostError', err);
+  }
+};
+
+$('acceptAnswer').onclick = async () => {
+  const raw = $('hostAnswer').value;
+  if (!raw.trim()) return fail('hostError', new Error('Cole o código 2 primeiro.'));
+  try{
+    const answer = await decode(raw);
+    await pc.setRemoteDescription(answer);
+    setState('connecting', 'negociando');
+    hideErr('hostError');
+  }catch(err){
+    fail('hostError', new Error('Código inválido ou incompleto. Peça para copiar de novo, inteiro.'));
+  }
+};
+
+/* =========================================================================
+   5. FLUXO — quem entra
+   ========================================================================= */
+$('btnGuest').onclick = () => { role = 'guest'; show('screenGuest'); };
+
+$('makeAnswer').onclick = async () => {
+  const raw = $('guestOffer').value;
+  if (!raw.trim()) return fail('guestError', new Error('Cole o código 1 primeiro.'));
+  try{
+    setState('connecting', 'preparando');
+    await startLocalMedia();
+    createPeer();
+
+    const offer = await decode(raw);
+    // Os transceivers nascem aqui, espelhando o que veio na oferta.
+    await pc.setRemoteDescription(offer);
+    await attachLocalTracks();
+
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await waitForIce(pc);
+
+    $('guestAnswer').value = await encode(pc.localDescription);
+    $('guestStep2').classList.remove('hidden');
+    hideErr('guestError');
+    setState('connecting', 'devolva o código 2');
+  }catch(err){
+    fail('guestError', new Error('Não deu para ler esse código. Confira se copiou o texto inteiro.'));
+  }
+};
+
+/* =========================================================================
+   6. CONTROLES DA CHAMADA
+   ========================================================================= */
+$('btnMic').onclick = () => {
+  const t = localStream && localStream.getAudioTracks()[0];
+  if (!t) return;
+  t.enabled = !t.enabled;
+  $('btnMic').classList.toggle('off', !t.enabled);
+};
+
+$('btnCam').onclick = () => {
+  const t = localStream && localStream.getVideoTracks()[0];
+  if (!t) return;
+  t.enabled = !t.enabled;
+  $('btnCam').classList.toggle('off', !t.enabled);
+};
+
+$('btnScreen').onclick = async () => {
+  const tVideo = transceiverFor('video');
+  if (!tVideo) return;
+
+  if (screenStream){                       // já compartilhando → volta pra câmera
+    await tVideo.sender.replaceTrack(localStream.getVideoTracks()[0] || null);
+    screenStream.getTracks().forEach(t => t.stop());
+    screenStream = null;
+    selfVideo.srcObject = localStream;
+    $('selfBox').classList.remove('sharing');
+    $('selfTag').textContent = 'você';
+    $('btnScreen').classList.remove('on');
+    return;
+  }
+
+  try{
+    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    const track = screenStream.getVideoTracks()[0];
+    // replaceTrack troca o que sai pelo mesmo canal já negociado — sem novo código.
+    await tVideo.sender.replaceTrack(track);
+    selfVideo.srcObject = screenStream;
+    $('selfBox').classList.add('sharing');
+    $('selfTag').textContent = 'sua tela';
+    $('btnScreen').classList.add('on');
+    // Quando a pessoa clica em "parar de compartilhar" na barra do sistema:
+    track.onended = () => $('btnScreen').click();
+  }catch(err){
+    console.warn('Compartilhamento cancelado:', err);
+    screenStream = null;
+  }
+};
+
+$('btnChat').onclick = () => {
+  $('chatPanel').classList.toggle('open');
+  $('btnChat').classList.toggle('on', $('chatPanel').classList.contains('open'));
+};
+
+$('btnHang').onclick = () => hangUp();
+
+function hangUp(){
+  if (dataChannel) try{ dataChannel.close(); }catch(e){}
+  if (pc) try{ pc.close(); }catch(e){}
+  [localStream, screenStream].forEach(s => s && s.getTracks().forEach(t => t.stop()));
+  localStream = screenStream = dataChannel = pc = null;
+  remoteStream = new MediaStream();
+  remoteVideo.srcObject = remoteStream;
+  document.body.classList.remove('in-call');
+  setState('idle', 'desconectado');
+  show('screenChoose');
+  ['hostOffer','hostAnswer','guestOffer','guestAnswer'].forEach(id => $(id).value = '');
+  $('guestStep2').classList.add('hidden');
+  $('copyOffer').disabled = true;
+  $('msgs').innerHTML = '';
+  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('off','on'));
+  $('chatPanel').classList.remove('open');
+}
+
+// Atalhos de teclado durante a chamada
+document.addEventListener('keydown', (e) => {
+  if (!document.body.classList.contains('in-call')) return;
+  if (e.target.matches('input, textarea')) return;
+  if (e.key === 'm') $('btnMic').click();
+  if (e.key === 'v') $('btnCam').click();
+  if (e.key === 's') $('btnScreen').click();
+});
+
+/* =========================================================================
+   7. CHAT (RTCDataChannel)
+   ========================================================================= */
+function wireDataChannel(ch){
+  ch.onmessage = (e) => addMsg(e.data, 'them');
+  ch.onopen = () => addMsg('Canal de texto aberto.', 'them');
+}
+
+$('chatForm').onsubmit = (e) => {
+  e.preventDefault();
+  const text = $('chatInput').value.trim();
+  if (!text || !dataChannel || dataChannel.readyState !== 'open') return;
+  dataChannel.send(text);
+  addMsg(text, 'me');
+  $('chatInput').value = '';
+};
+
+function addMsg(text, who){
+  const el = document.createElement('div');
+  el.className = 'msg ' + who;
+  el.textContent = text;
+  $('msgs').appendChild(el);
+  $('msgs').scrollTop = $('msgs').scrollHeight;
+}
+
+/* =========================================================================
+   8. UTILITÁRIOS DE TELA
+   ========================================================================= */
+function show(id){
+  ['screenChoose','screenHost','screenGuest'].forEach(s => $(s).classList.toggle('hidden', s !== id));
+}
+
+/* Descobre por onde o vídeo está passando de fato. Vale muito para depurar:
+   "via relay" significa que o TURN salvou a chamada; "direta" é P2P puro. */
+async function reportPath(){
+  if (!pc) return;
+  try{
+    const stats = await pc.getStats();
+    const byId = {};
+    let pair = null;
+    stats.forEach(r => {
+      byId[r.id] = r;
+      if (r.type === 'candidate-pair' && r.state === 'succeeded' && (r.nominated || r.selected)) {
+        pair = pair || r;
+      }
+    });
+    if (!pair) return;
+    const local  = byId[pair.localCandidateId];
+    const remote = byId[pair.remoteCandidateId];
+    const viaRelay = (local && local.candidateType === 'relay')
+                  || (remote && remote.candidateType === 'relay');
+    $('peerHint').textContent = viaRelay ? 'via relay (TURN)' : 'conexão direta';
+  }catch(err){ /* getStats é opcional, não pode quebrar a chamada */ }
+}
+
+/* Avisa logo na abertura se o TURN não foi configurado. */
+if (!HAS_TURN){
+  const warn = document.createElement('div');
+  warn.className = 'note';
+  warn.textContent = 'TURN não configurado: se vocês estiverem em redes diferentes, '
+                   + 'a conexão pode falhar. Preencha o bloco TURN no topo do index.html.';
+  $('screenChoose').appendChild(warn);
+}
+
+function fail(errId, err){
+  const el = $(errId);
+  el.textContent = err.message || String(err);
+  el.classList.remove('hidden');
+  console.error(err);
+}
+function hideErr(id){ $(id).classList.add('hidden'); }
+
+document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => hangUp());
+
+async function copyFrom(id, btn, label){
+  const value = $(id).value;
+  if (!value) return;
+  try{ await navigator.clipboard.writeText(value); }
+  catch(e){ $(id).select(); document.execCommand('copy'); }
+  const old = btn.textContent;
+  btn.textContent = 'Copiado';
+  setTimeout(() => btn.textContent = old, 1400);
+}
+$('copyOffer').onclick  = (e) => copyFrom('hostOffer', e.currentTarget);
+$('copyAnswer').onclick = (e) => copyFrom('guestAnswer', e.currentTarget);
+</script>
+</body>
+</html>
